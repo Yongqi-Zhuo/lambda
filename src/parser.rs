@@ -140,35 +140,35 @@ impl<'a> Parser<'a> {
             }
             t
         } else {
-            panic!("Expected {:?}, encountered EOF", token);
+            panic!("Expected {:?}, got EOF", token);
         }
     }
 
     fn consume_ident(&mut self) -> String {
         match self.next_token() {
             Some(Token::Ident(x)) => x.to_string(),
-            _ => panic!("Expected identifier"),
+            tok => panic!("Expected identifier, got {:?}", tok),
         }
     }
 
     fn consume_bool(&mut self) -> bool {
         match self.next_token() {
             Some(Token::Bool(b)) => b,
-            _ => panic!("Expected boolean"),
+            tok => panic!("Expected boolean, got {:?}", tok),
         }
     }
 
     fn consume_nat(&mut self) -> u32 {
         match self.next_token() {
             Some(Token::Nat(n)) => n,
-            _ => panic!("Expected number"),
+            tok => panic!("Expected number, got {:?}", tok),
         }
     }
 
     fn consume_intrinsic(&mut self) -> Intrinsic {
         match self.next_token() {
             Some(Token::Intrinsic(intrinsic)) => intrinsic,
-            _ => panic!("Expected intrinsic"),
+            tok => panic!("Expected intrinsic, got {:?}", tok),
         }
     }
 
@@ -240,44 +240,44 @@ mod tests {
 
     #[test]
     fn test_parser() {
-        let mut parser = Parser::new("λf. (λx. λv. f (x x) v) (λx. λv. f (x x) v)");
-        let term = parser.parse_term();
+        let mut parser = Parser::new("λf. (λx. f (λv. x x v)) (λx. f (λv. x x v))");
+        let term = parser.parse();
         let fix: Term = Term::Abs(
             "f".to_string(),
             Box::new(Term::App(
                 Box::new(Term::Abs(
                     "x".to_string(),
-                    Box::new(Term::Abs(
-                        "v".to_string(),
-                        Box::new(Term::App(
+                    Box::new(Term::App(
+                        Box::new(Term::Var("f".to_string())),
+                        Box::new(Term::Abs(
+                            "v".to_string(),
                             Box::new(Term::App(
-                                Box::new(Term::Var("f".to_string())),
                                 Box::new(Term::App(
                                     Box::new(Term::Var("x".to_string())),
                                     Box::new(Term::Var("x".to_string())),
                                 )),
+                                Box::new(Term::Var("v".to_string())),
                             )),
-                            Box::new(Term::Var("v".to_string())),
                         )),
                     )),
                 )),
                 Box::new(Term::Abs(
                     "x".to_string(),
-                    Box::new(Term::Abs(
-                        "v".to_string(),
-                        Box::new(Term::App(
+                    Box::new(Term::App(
+                        Box::new(Term::Var("f".to_string())),
+                        Box::new(Term::Abs(
+                            "v".to_string(),
                             Box::new(Term::App(
-                                Box::new(Term::Var("f".to_string())),
                                 Box::new(Term::App(
                                     Box::new(Term::Var("x".to_string())),
                                     Box::new(Term::Var("x".to_string())),
                                 )),
+                                Box::new(Term::Var("v".to_string())),
                             )),
-                            Box::new(Term::Var("v".to_string())),
                         )),
                     )),
                 )),
-            )),
+            ))
         );
         assert_eq!(term, fix);
     }

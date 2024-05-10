@@ -4,8 +4,8 @@ use lambda::{Evaluator, Parser, Term};
 
 fn main() {
     println!("Hello, world!");
-    // fix = λf. (λx. λv. f (x x) v) (λx. λv. f (x x) v)
-    let fix = Parser::new("λf. (λx. λv. f (x x) v) (λx. λv. f (x x) v)").parse();
+    // fix = λf. (λx. f (λv. x x v)) (λx. f (λv. x x v))
+    let fix = Parser::new("λf. (λx. f (λv. x x v)) (λx. f (λv. x x v))").parse();
     // plus = λm. λn. if (iszero m) n (plus (pred m) (succ n))
     // plus = fix (λf. λm. λn. if iszero m then n else (f (pred m) (succ n)))
     let plus = Term::App(
