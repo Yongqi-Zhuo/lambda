@@ -1,63 +1,91 @@
-use std::rc::Rc;
+use std::fmt;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Intrinsic {
     IsZero,
     Succ,
     Pred,
 }
 
-#[derive(Debug, PartialEq)]
-pub enum Value {
-    VBool(bool),
-    VNat(u32),
-    VAbs(String, Box<Term>),
-    VIntrinsic(Intrinsic),
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Type {
+    TBool,
+    TNat,
+    TVar(String),
+    TArrow(Box<Type>, Box<Type>),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+impl Type {
+    fn format(&self, f: &mut fmt::Formatter, atom: bool) -> fmt::Result {
+        match self {
+            Type::TBool => write!(f, "Bool"),
+            Type::TNat => write!(f, "Nat"),
+            Type::TVar(x) => write!(f, "{}", x),
+            Type::TArrow(t1, t2) => {
+                if atom {
+                    write!(f, "(")?;
+                    t1.format(f, true)?;
+                    write!(f, " -> ")?;
+                    t2.format(f, false)?;
+                    write!(f, ")")?;
+                } else {
+                    t1.format(f, true)?;
+                    write!(f, " -> ")?;
+                    t2.format(f, false)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.format(f, false)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct TermAbs {
+    pub x: String,
+    pub ty: Option<Type>,
+    pub t: Box<Term>,
+}
+
+impl TermAbs {
+    pub fn new(x: String, ty: Option<Type>, t: Box<Term>) -> Self {
+        Self { x, ty, t }
+    }
+}
+
+impl Into<Term> for TermAbs {
+    fn into(self) -> Term {
+        Term::Abs(self)
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub enum Term {
-    Val(Rc<Value>),
     Var(String),
     Bool(bool),
     Nat(u32),
-    Abs(String, Box<Term>),
+    Abs(TermAbs),
     Intrinsic(Intrinsic),
     App(Box<Term>, Box<Term>),
     If(Box<Term>, Box<Term>, Box<Term>),
 }
 
-impl Term {
-    pub fn subst(&self, x: &str, v: Term) -> Term {
-        match self {
-            Term::Val(v) => Term::Val(v.clone()),
-            Term::Var(y) => {
-                if x == y {
-                    v
-                } else {
-                    Term::Var(y.clone())
-                }
-            }
-            Term::Bool(b) => Term::Bool(*b),
-            Term::Nat(n) => Term::Nat(*n),
-            Term::Abs(y, t) => {
-                if x == y {
-                    // Protected from variable capture
-                    Term::Abs(y.clone(), t.clone())
-                } else {
-                    Term::Abs(y.clone(), Box::new(t.subst(x, v)))
-                }
-            }
-            Term::App(t1, t2) => Term::App(
-                Box::new(t1.subst(x, v.clone())),
-                Box::new(t2.subst(x, v.clone())),
-            ),
-            Term::Intrinsic(intrinsic) => Term::Intrinsic(*intrinsic),
-            Term::If(t1, t2, t3) => Term::If(
-                Box::new(t1.subst(x, v.clone())),
-                Box::new(t2.subst(x, v.clone())),
-                Box::new(t3.subst(x, v.clone())),
-            ),
-        }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_type_display() {
+        assert_eq!(format!("{}", Type::TBool), "Bool");
+        assert_eq!(format!("{}", Type::TNat), "Nat");
+        assert_eq!(format!("{}", Type::TVar("a".to_string())), "a");
+        assert_eq!(format!("{}", Type::TArrow(Box::new(Type::TBool), Box::new(Type::TNat))), "Bool -> Nat");
+        assert_eq!(format!("{}", Type::TArrow(Box::new(Type::TArrow(Box::new(Type::TBool), Box::new(Type::TNat))), Box::new(Type::TBool))), "(Bool -> Nat) -> Bool");
+        assert_eq!(format!("{}", Type::TArrow(Box::new(Type::TBool), Box::new(Type::TArrow(Box::new(Type::TBool), Box::new(Type::TNat)))),), "Bool -> Bool -> Nat");
     }
 }

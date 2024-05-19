@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 
-use super::core::{Intrinsic, Term};
-use super::intrinsic::INTRINSICS;
+use crate::core::{Intrinsic, Term, TermAbs, Type};
+use crate::intrinsic::INTRINSICS;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Token<'a> {
     LParen,
     RParen,
     Dot,
+    Colon,
+    Arrow,
     Lambda,
     Ident(&'a str),
     Bool(bool),
@@ -67,6 +69,19 @@ impl<'a> Iterator for Tokenizer<'a> {
                     self.iter.next();
                     return Some(Token::Dot);
                 }
+                Some(&(_, ':')) => {
+                    self.iter.next();
+                    return Some(Token::Colon);
+                }
+                Some(&(_, '-')) => {
+                    self.iter.next();
+                    if let Some(&(_, '>')) = self.iter.peek() {
+                        self.iter.next();
+                        return Some(Token::Arrow);
+                    } else {
+                        panic!("Unexpected character: -");
+                    }
+                }
                 Some(&(_, 'λ')) => {
                     self.iter.next();
                     return Some(Token::Lambda);
@@ -125,11 +140,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn next_token(&mut self) -> Option<Token> {
+    fn next_token(&mut self) -> Option<Token<'a>> {
         self.tokenizer.next()
     }
 
-    fn peek_token(&mut self) -> Option<&Token> {
+    fn peek_token(&mut self) -> Option<&Token<'a>> {
         self.tokenizer.peek()
     }
 
@@ -195,9 +210,14 @@ impl<'a> Parser<'a> {
             Some(Token::Lambda) => {
                 self.consume(Token::Lambda);
                 let x = self.consume_ident();
+                let mut ty: Option<Type> = None;
+                if let Some(Token::Colon) = self.peek_token() {
+                    self.consume(Token::Colon);
+                    ty = Some(self.parse_type());
+                }
                 self.consume(Token::Dot);
                 let t = self.parse_term();
-                Some(Term::Abs(x, Box::new(t)))
+                Some(TermAbs::new(x, ty, Box::new(t)).into())
             }
             Some(Token::Bool(_)) => Some(Term::Bool(self.consume_bool())),
             Some(Token::Nat(_)) => Some(Term::Nat(self.consume_nat())),
@@ -213,6 +233,35 @@ impl<'a> Parser<'a> {
             }
             Some(Token::Ident(_)) => Some(Term::Var(self.consume_ident())),
             _ => None,
+        }
+    }
+
+    pub fn parse_type(&mut self) -> Type {
+        let ty = match self.peek_token() {
+            Some(Token::Ident("Bool")) => {
+                self.consume(Token::Ident("Bool"));
+                Type::TBool
+            }
+            Some(Token::Ident("Nat")) => {
+                self.consume(Token::Ident("Nat"));
+                Type::TNat
+            }
+            Some(Token::Ident(_)) => {
+                Type::TVar(self.consume_ident())
+            }
+            Some(Token::LParen) => {
+                self.consume(Token::LParen);
+                let t = self.parse_type();
+                self.consume(Token::RParen);
+                t
+            }
+            tok => panic!("Expected type token but got {:?}", tok),
+        };
+        if let Some(Token::Arrow) = self.peek_token() {
+            self.consume(Token::Arrow);
+            Type::TArrow(Box::new(ty), Box::new(self.parse_type()))
+        } else {
+            ty
         }
     }
 }
@@ -240,17 +289,21 @@ mod tests {
 
     #[test]
     fn test_parser() {
-        let mut parser = Parser::new("λf. (λx. f (λv. x x v)) (λx. f (λv. x x v))");
+        let mut parser = Parser::new("λf: T -> T. (λx. f (λv. x x v)) (λx. f (λv. x x v))");
         let term = parser.parse();
-        let fix: Term = Term::Abs(
+        let fix: Term = Term::Abs(TermAbs::new(
             "f".to_string(),
+            Some(Type::TArrow(
+                Box::new(Type::TVar("T".to_string())),
+                Box::new(Type::TVar("T".to_string()))
+            )),
             Box::new(Term::App(
-                Box::new(Term::Abs(
-                    "x".to_string(),
+                Box::new(Term::Abs(TermAbs::new(
+                    "x".to_string(), None,
                     Box::new(Term::App(
                         Box::new(Term::Var("f".to_string())),
-                        Box::new(Term::Abs(
-                            "v".to_string(),
+                        Box::new(Term::Abs(TermAbs::new(
+                            "v".to_string(), None,
                             Box::new(Term::App(
                                 Box::new(Term::App(
                                     Box::new(Term::Var("x".to_string())),
@@ -258,15 +311,15 @@ mod tests {
                                 )),
                                 Box::new(Term::Var("v".to_string())),
                             )),
-                        )),
-                    )),
+                        ))),
+                    ))),
                 )),
-                Box::new(Term::Abs(
-                    "x".to_string(),
+                Box::new(Term::Abs(TermAbs::new(
+                    "x".to_string(), None,
                     Box::new(Term::App(
                         Box::new(Term::Var("f".to_string())),
-                        Box::new(Term::Abs(
-                            "v".to_string(),
+                        Box::new(Term::Abs(TermAbs::new(
+                            "v".to_string(), None,
                             Box::new(Term::App(
                                 Box::new(Term::App(
                                     Box::new(Term::Var("x".to_string())),
@@ -274,10 +327,10 @@ mod tests {
                                 )),
                                 Box::new(Term::Var("v".to_string())),
                             )),
-                        )),
-                    )),
+                        ))),
+                    ))),
                 )),
-            ))
+            )))
         );
         assert_eq!(term, fix);
     }
