@@ -1,13 +1,21 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{collections::HashMap, fmt, rc::Rc};
 
 use crate::core::{Intrinsic, TermAbs};
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Captures<'a> {
     pub captures: HashMap<String, Rc<Value<'a>>>,
 }
 
 impl<'a> Captures<'a> {
+    pub fn new() -> Self {
+        Self {
+            captures: HashMap::new(),
+        }
+    }
+    pub fn extend(&mut self, x: &str, v: Rc<Value<'a>>) {
+        self.captures.insert(x.to_string(), v);
+    }
     pub fn extended(&self, x: &str, v: Rc<Value<'a>>) -> Self {
         let mut captures = self.captures.clone();
         captures.insert(x.to_string(), v);
@@ -39,10 +47,27 @@ impl<'a> Into<Value<'a>> for ValueAbs<'a> {
     }
 }
 
+impl fmt::Display for ValueAbs<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "<function>")
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Value<'a> {
     VBool(bool),
     VNat(u32),
     VAbs(ValueAbs<'a>),
     VIntrinsic(Intrinsic),
+}
+
+impl fmt::Display for Value<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Value::VBool(b) => write!(f, "{}", b),
+            Value::VNat(n) => write!(f, "{}", n),
+            Value::VAbs(abs) => write!(f, "{}", abs),
+            Value::VIntrinsic(intrinsic) => write!(f, "{:?}", intrinsic),
+        }
+    }
 }

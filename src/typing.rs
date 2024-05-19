@@ -1,6 +1,6 @@
 use std::{collections::HashMap, fmt};
 
-use crate::core::{Term, TermAbs, Type};
+use crate::core::{NameGenerator, Term, Type};
 use crate::intrinsic;
 
 // Implement a simple Hindley-Milner type inference algorithm
@@ -16,6 +16,10 @@ impl Context {
         }
     }
 
+    pub fn extend(&mut self, x: &str, t: Type) {
+        self.defs.insert(x.to_string(), t);
+    }
+
     pub fn extended(&self, x: &str, t: Type) -> Self {
         let mut defs = self.defs.clone();
         defs.insert(x.to_string(), t);
@@ -28,8 +32,8 @@ impl Context {
 }
 
 #[derive(Debug)]
-pub struct InferContext {
-    counter: i32,
+pub struct InferContext<'a> {
+    gen: &'a mut NameGenerator,
     env: HashMap<String, Type>,
 }
 
@@ -50,18 +54,16 @@ impl Type {
     }
 }
 
-impl InferContext {
-    pub fn new() -> Self {
+impl<'a> InferContext<'a> {
+    pub fn new(gen: &'a mut NameGenerator) -> Self {
         Self {
-            counter: 0,
+            gen,
             env: HashMap::new(),
         }
     }
 
     fn fresh(&mut self) -> Type {
-        let ty = Type::TVar(format!("_{}", self.counter));
-        self.counter += 1;
-        ty
+        Type::fresh(self.gen)
     }
 
     fn subst(&mut self, var: &str, ty: &Type) {
@@ -118,8 +120,7 @@ impl InferContext {
                 Type::TArrow(Box::new(ty), Box::new(t))
             }
             Term::Intrinsic(intrinsic) => {
-                let typing = &intrinsic::lookup(*intrinsic).typing;
-                Type::TArrow(Box::new(typing.arg.clone()), Box::new(typing.ret.clone()))
+                intrinsic::lookup(*intrinsic).typing(self.gen)
             }
             Term::App(t1, t2) => {
                 let t1 = self.infer(ctx, t1);
@@ -184,9 +185,12 @@ pub fn structural_eq(t1: &Type, t2: &Type) -> Result<(), StructuralEqError> {
 mod tests {
     use super::*;
 
+    use crate::core::TermAbs;
+
     #[test]
     fn test_infer() {
-        let mut infer = InferContext::new();
+        let mut gen = NameGenerator::new();
+        let mut infer = InferContext::new(&mut gen);
         let ctx = Context::new();
         let t = Term::Abs(TermAbs::new(
             "x".to_string(),
@@ -194,6 +198,8 @@ mod tests {
             Box::new(Term::Var("x".to_string())),
         ));
         let ty = infer.infer_top(&ctx, &t);
-        assert_eq!(ty, Type::TArrow(Box::new(Type::TVar("_0".to_string())), Box::new(Type::TVar("_0".to_string()))));
+        let expected = Type::TArrow(Box::new(Type::TVar("T".to_string())), Box::new(Type::TVar("T".to_string())));
+        let res = structural_eq(&ty, &expected);
+        assert!(res.is_ok(), "{}", res.unwrap_err());
     }
 }

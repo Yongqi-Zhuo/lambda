@@ -16,6 +16,10 @@ pub enum Type {
 }
 
 impl Type {
+    pub fn fresh(gen: &mut NameGenerator) -> Self {
+        Type::TVar(gen.next())
+    }
+
     fn format(&self, f: &mut fmt::Formatter, atom: bool) -> fmt::Result {
         match self {
             Type::TBool => write!(f, "Bool"),
@@ -73,6 +77,28 @@ pub enum Term {
     Intrinsic(Intrinsic),
     App(Box<Term>, Box<Term>),
     If(Box<Term>, Box<Term>, Box<Term>),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct Stmt {
+    pub var: Option<String>,
+    pub term: Term,
+}
+
+#[derive(Debug)]
+pub struct NameGenerator {
+    counter: i32,
+}
+
+impl NameGenerator {
+    pub fn new() -> Self {
+        Self { counter: 0 }
+    }
+    pub fn next(&mut self) -> String {
+        let name = format!("_{}", self.counter);
+        self.counter += 1;
+        name
+    }
 }
 
 #[cfg(test)]

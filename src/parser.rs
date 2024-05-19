@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::core::{Intrinsic, Term, TermAbs, Type};
+use crate::core::{Intrinsic, Stmt, Term, TermAbs, Type};
 use crate::intrinsic::INTRINSICS;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -16,14 +16,16 @@ pub enum Token<'a> {
     Nat(u32),
     Intrinsic(Intrinsic),
     If, Then, Else,
+    Let, Eq,
 }
 
-const KEYWORDS: [(&str, Token::<'static>); 5] = [
+const KEYWORDS: [(&str, Token::<'static>); 6] = [
     ("true", Token::Bool(true)),
     ("false", Token::Bool(false)),
     ("if", Token::If),
     ("then", Token::Then),
     ("else", Token::Else),
+    ("let", Token::Let),
 ];
 
 pub struct Tokenizer<'a> {
@@ -82,7 +84,11 @@ impl<'a> Iterator for Tokenizer<'a> {
                         panic!("Unexpected character: -");
                     }
                 }
-                Some(&(_, 'λ')) => {
+                Some(&(_, '=')) => {
+                    self.iter.next();
+                    return Some(Token::Eq);
+                }
+                Some(&(_, 'λ' | '\\')) => {
                     self.iter.next();
                     return Some(Token::Lambda);
                 }
@@ -99,14 +105,14 @@ impl<'a> Iterator for Tokenizer<'a> {
                     return Some(Token::Nat(n));
                 }
                 Some(&(start, c)) => {
-                    if !c.is_alphabetic() {
+                    if !c.is_alphabetic() && c != '_' {
                         panic!("Unexpected character: {}", c);
                     }
                     // We need to return a slice of the input string
                     let end;
                     loop {
                         if let Some(&(i, c)) = self.iter.peek() {
-                            if c.is_alphanumeric() {
+                            if c.is_alphanumeric() || c == '_' {
                                 self.iter.next();
                             } else {
                                 end = i;
@@ -187,11 +193,20 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Term {
-        self.parse_term()
+    pub fn parse_stmt(&mut self) -> Stmt {
+        let var = if let Some(Token::Let) = self.peek_token() {
+            self.consume(Token::Let);
+            let x = self.consume_ident();
+            self.consume(Token::Eq);
+            Some(x)
+        } else {
+            None
+        };
+        let term = self.parse_term();
+        Stmt { var, term }
     }
 
-    fn parse_term(&mut self) -> Term {
+    pub fn parse_term(&mut self) -> Term {
         let mut t = self.parse_atom().unwrap();
         while let Some(atom) = self.parse_atom() {
             t = Term::App(Box::new(t), Box::new(atom));
@@ -210,11 +225,12 @@ impl<'a> Parser<'a> {
             Some(Token::Lambda) => {
                 self.consume(Token::Lambda);
                 let x = self.consume_ident();
-                let mut ty: Option<Type> = None;
-                if let Some(Token::Colon) = self.peek_token() {
+                let ty = if let Some(Token::Colon) = self.peek_token() {
                     self.consume(Token::Colon);
-                    ty = Some(self.parse_type());
-                }
+                    Some(self.parse_type())
+                } else {
+                    None
+                };
                 self.consume(Token::Dot);
                 let t = self.parse_term();
                 Some(TermAbs::new(x, ty, Box::new(t)).into())
@@ -270,6 +286,8 @@ impl<'a> Parser<'a> {
 mod tests {
     use super::*;
 
+    use crate::intrinsic::fix_combinator;
+
     #[test]
     fn test_tokenizer() {
         let input = "λx. λy. x y true 123";
@@ -290,48 +308,8 @@ mod tests {
     #[test]
     fn test_parser() {
         let mut parser = Parser::new("λf: T -> T. (λx. f (λv. x x v)) (λx. f (λv. x x v))");
-        let term = parser.parse();
-        let fix: Term = Term::Abs(TermAbs::new(
-            "f".to_string(),
-            Some(Type::TArrow(
-                Box::new(Type::TVar("T".to_string())),
-                Box::new(Type::TVar("T".to_string()))
-            )),
-            Box::new(Term::App(
-                Box::new(Term::Abs(TermAbs::new(
-                    "x".to_string(), None,
-                    Box::new(Term::App(
-                        Box::new(Term::Var("f".to_string())),
-                        Box::new(Term::Abs(TermAbs::new(
-                            "v".to_string(), None,
-                            Box::new(Term::App(
-                                Box::new(Term::App(
-                                    Box::new(Term::Var("x".to_string())),
-                                    Box::new(Term::Var("x".to_string())),
-                                )),
-                                Box::new(Term::Var("v".to_string())),
-                            )),
-                        ))),
-                    ))),
-                )),
-                Box::new(Term::Abs(TermAbs::new(
-                    "x".to_string(), None,
-                    Box::new(Term::App(
-                        Box::new(Term::Var("f".to_string())),
-                        Box::new(Term::Abs(TermAbs::new(
-                            "v".to_string(), None,
-                            Box::new(Term::App(
-                                Box::new(Term::App(
-                                    Box::new(Term::Var("x".to_string())),
-                                    Box::new(Term::Var("x".to_string())),
-                                )),
-                                Box::new(Term::Var("v".to_string())),
-                            )),
-                        ))),
-                    ))),
-                )),
-            )))
-        );
+        let term = parser.parse_term();
+        let fix = fix_combinator();
         assert_eq!(term, fix);
     }
 }
